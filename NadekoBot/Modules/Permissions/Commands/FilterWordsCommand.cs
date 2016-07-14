@@ -23,9 +23,9 @@ namespace NadekoBot.Modules.Permissions.Commands
                     if (serverPerms.Words.Any(w => wordsInMessage.Contains(w)))
                     {
                         await args.Message.Delete().ConfigureAwait(false);
-                        IncidentsHandler.Add(args.Server.Id, $"User [{args.User.Name}/{args.User.Id}] posted " +
-                                                             $"BANNED WORD in [{args.Channel.Name}/{args.Channel.Id}] channel. " +
-                                                             $"Full message: [[{args.Message.Text}]]");
+                        IncidentsHandler.Add(args.Server.Id, args.Channel.Id, $"User [{args.User.Name}/{args.User.Id}] posted " +
+                                                             $"BANNED WORD in [{args.Channel.Name}/{args.Channel.Id}] channel.\n" +
+                                                             $"`Full message:` {args.Message.Text}");
                         if (serverPerms.Verbose)
                             await args.Channel.SendMessage($"{args.User.Mention} One or more of the words you used " +
                                                            $"in that sentence are not allowed here.")
@@ -49,8 +49,8 @@ namespace NadekoBot.Modules.Permissions.Commands
 
         internal override void Init(CommandGroupBuilder cgb)
         {
-            cgb.CreateCommand(Module.Prefix + "cfw")
-                .Alias(Module.Prefix + "channelfilterwords")
+            cgb.CreateCommand(Module.Prefix + "chnlfilterwords")
+                .Alias(Module.Prefix + "cfw")
                 .Description("Enables or disables automatic deleting of messages containing banned words on the channel." +
                              "If no channel supplied, it will default to current one. Use ALL to apply to all existing channels at once." +
                              "\n**Usage**: ;cfw enable #general-chat")
@@ -86,8 +86,8 @@ namespace NadekoBot.Modules.Permissions.Commands
                     }
                 });
 
-            cgb.CreateCommand(Module.Prefix + "afw")
-               .Alias(Module.Prefix + "addfilteredword")
+            cgb.CreateCommand(Module.Prefix + "addfilterword")
+               .Alias(Module.Prefix + "afw")
                .Description("Adds a new word to the list of filtered words" +
                             "\n**Usage**: ;afw poop")
                .Parameter("word", ParameterType.Unparsed)
@@ -108,8 +108,8 @@ namespace NadekoBot.Modules.Permissions.Commands
                    }
                });
 
-            cgb.CreateCommand(Module.Prefix + "rfw")
-               .Alias(Module.Prefix + "removefilteredword")
+            cgb.CreateCommand(Module.Prefix + "rmvfilterword")
+               .Alias(Module.Prefix + "rfw")
                .Description("Removes the word from the list of filtered words" +
                             "\n**Usage**: ;rw poop")
                .Parameter("word", ParameterType.Unparsed)
@@ -130,8 +130,8 @@ namespace NadekoBot.Modules.Permissions.Commands
                    }
                });
 
-            cgb.CreateCommand(Module.Prefix + "lfw")
-               .Alias(Module.Prefix + "listfilteredwords")
+            cgb.CreateCommand(Module.Prefix + "lstfilterwords")
+               .Alias(Module.Prefix + "lfw")
                .Description("Shows a list of filtered words" +
                             "\n**Usage**: ;lfw")
                .Do(async e =>
@@ -150,8 +150,8 @@ namespace NadekoBot.Modules.Permissions.Commands
                    }
                });
 
-            cgb.CreateCommand(Module.Prefix + "sfw")
-                .Alias(Module.Prefix + "serverfilterwords")
+            cgb.CreateCommand(Module.Prefix + "srvrfilterwords")
+                .Alias(Module.Prefix + "sfw")
                 .Description("Enables or disables automatic deleting of messages containing forbidden words on the server.\n**Usage**: ;sfw disable")
                 .Parameter("bool")
                 .Do(async e =>

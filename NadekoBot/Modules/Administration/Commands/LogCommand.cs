@@ -4,19 +4,12 @@ using NadekoBot.Classes;
 using NadekoBot.Extensions;
 using NadekoBot.Modules.Permissions.Classes;
 using System;
-using System.Collections.Concurrent;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace NadekoBot.Modules.Administration.Commands
 {
     internal class LogCommand : DiscordCommand
     {
-
-        private readonly ConcurrentDictionary<Server, Channel> logs = new ConcurrentDictionary<Server, Channel>();
-        private readonly ConcurrentDictionary<Server, Channel> loggingPresences = new ConcurrentDictionary<Server, Channel>();
-        private readonly ConcurrentDictionary<Channel, Channel> voiceChannelLog = new ConcurrentDictionary<Channel, Channel>();
-
         private string prettyCurrentTime => $"【{DateTime.Now:HH:mm:ss}】";
 
         public LogCommand(DiscordModule module) : base(module)
@@ -58,8 +51,11 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 if (e.Before.Name != e.After.Name)
                     await ch.SendMessage($@"`{prettyCurrentTime}` **Channel Name Changed** `#{e.Before.Name}` (*{e.After.Id}*)
@@ -76,8 +72,11 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage($"❗`{prettyCurrentTime}`❗`Channel Deleted:` #{e.Channel.Name} (*{e.Channel.Id}*)").ConfigureAwait(false);
             }
@@ -88,8 +87,11 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage($"`{prettyCurrentTime}`🆕`Channel Created:` #{e.Channel.Mention} (*{e.Channel.Id}*)").ConfigureAwait(false);
             }
@@ -100,8 +102,11 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage($"`{prettyCurrentTime}`♻`User was unbanned:` **{e.User.Name}** ({e.User.Id})").ConfigureAwait(false);
             }
@@ -112,8 +117,11 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage($"`{prettyCurrentTime}`✅`User joined:` **{e.User.Name}** ({e.User.Id})").ConfigureAwait(false);
             }
@@ -124,8 +132,11 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage($"`{prettyCurrentTime}`❗`User left:` **{e.User.Name}** ({e.User.Id})").ConfigureAwait(false);
             }
@@ -136,26 +147,16 @@ namespace NadekoBot.Modules.Administration.Commands
         {
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage($"❗`{prettyCurrentTime}`❌`User banned:` **{e.User.Name}** ({e.User.Id})").ConfigureAwait(false);
             }
             catch { }
         }
-
-        public Func<CommandEventArgs, Task> DoFunc() => async e =>
-        {
-            Channel ch;
-            if (!logs.TryRemove(e.Server, out ch))
-            {
-                logs.TryAdd(e.Server, e.Channel);
-                await e.Channel.SendMessage($"❗**I WILL BEGIN LOGGING SERVER ACTIVITY IN THIS CHANNEL**❗").ConfigureAwait(false);
-                return;
-            }
-
-            await e.Channel.SendMessage($"❗**NO LONGER LOGGING IN {ch.Mention} CHANNEL**❗").ConfigureAwait(false);
-        };
 
         private async void MsgRecivd(object sender, MessageEventArgs e)
         {
@@ -163,12 +164,25 @@ namespace NadekoBot.Modules.Administration.Commands
             {
                 if (e.Server == null || e.Channel.IsPrivate || e.User.Id == NadekoBot.Client.CurrentUser.Id)
                     return;
-                Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch) || e.Channel == ch)
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null || e.Channel.Id == chId)
                     return;
-                await ch.SendMessage(
-$@"🕔`{prettyCurrentTime}` **New Message** `#{e.Channel.Name}`
+                Channel ch;
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
+                    return;
+                if (!string.IsNullOrWhiteSpace(e.Message.Text))
+                {
+                    await ch.SendMessage(
+    $@"🕔`{prettyCurrentTime}` **New Message** `#{e.Channel.Name}`
 👤`{e.User?.ToString() ?? ("NULL")}` {e.Message.Text.Unmention()}").ConfigureAwait(false);
+                }
+                else
+                {
+                    await ch.SendMessage(
+    $@"🕔`{prettyCurrentTime}` **File Uploaded** `#{e.Channel.Name}`
+👤`{e.User?.ToString() ?? ("NULL")}` {e.Message.Attachments.FirstOrDefault()?.ProxyUrl}").ConfigureAwait(false);
+                }
+
             }
             catch { }
         }
@@ -178,12 +192,24 @@ $@"🕔`{prettyCurrentTime}` **New Message** `#{e.Channel.Name}`
             {
                 if (e.Server == null || e.Channel.IsPrivate || e.User?.Id == NadekoBot.Client.CurrentUser.Id)
                     return;
-                Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch) || e.Channel == ch)
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null || e.Channel.Id == chId)
                     return;
-                await ch.SendMessage(
-$@"🕔`{prettyCurrentTime}` **Message** 🚮 `#{e.Channel.Name}`
+                Channel ch;
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
+                    return;
+                if (!string.IsNullOrWhiteSpace(e.Message.Text))
+                {
+                    await ch.SendMessage(
+    $@"🕔`{prettyCurrentTime}` **Message** 🚮 `#{e.Channel.Name}`
 👤`{e.User?.ToString() ?? ("NULL")}` {e.Message.Text.Unmention()}").ConfigureAwait(false);
+                }
+                else
+                {
+                    await ch.SendMessage(
+    $@"🕔`{prettyCurrentTime}` **File Deleted** `#{e.Channel.Name}`
+👤`{e.User?.ToString() ?? ("NULL")}` {e.Message.Attachments.FirstOrDefault()?.ProxyUrl}").ConfigureAwait(false);
+                }
             }
             catch { }
         }
@@ -193,8 +219,11 @@ $@"🕔`{prettyCurrentTime}` **Message** 🚮 `#{e.Channel.Name}`
             {
                 if (e.Server == null || e.Channel.IsPrivate || e.User?.Id == NadekoBot.Client.CurrentUser.Id)
                     return;
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null || e.Channel.Id == chId)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch) || e.Channel == ch)
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 await ch.SendMessage(
 $@"🕔`{prettyCurrentTime}` **Message** 📝 `#{e.Channel.Name}`
@@ -206,19 +235,28 @@ $@"🕔`{prettyCurrentTime}` **Message** 📝 `#{e.Channel.Name}`
         }
         private async void UsrUpdtd(object sender, UserUpdatedEventArgs e)
         {
+            var config = SpecificConfigurations.Default.Of(e.Server.Id);
             try
             {
-                Channel ch;
-                if (loggingPresences.TryGetValue(e.Server, out ch))
-                    if (e.Before.Status != e.After.Status)
+                var chId = config.LogPresenceChannel;
+                if (chId != null)
+                {
+                    Channel ch;
+                    if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) != null)
                     {
-                        await ch.SendMessage($"`{prettyCurrentTime}`**{e.Before.Name}** is now **{e.After.Status}**.").ConfigureAwait(false);
+                        if (e.Before.Status != e.After.Status)
+                        {
+                            await ch.SendMessage($"`{prettyCurrentTime}`**{e.Before.Name}** is now **{e.After.Status}**.").ConfigureAwait(false);
+                        }
                     }
+                }
             }
             catch { }
 
             try
             {
+                ulong notifyChBeforeId;
+                ulong notifyChAfterId;
                 Channel notifyChBefore = null;
                 Channel notifyChAfter = null;
                 var beforeVch = e.Before.VoiceChannel;
@@ -227,11 +265,11 @@ $@"🕔`{prettyCurrentTime}` **Message** 📝 `#{e.Channel.Name}`
                 var notifyJoin = false;
                 if ((beforeVch != null || afterVch != null) && (beforeVch != afterVch)) // this means we need to notify for sure.
                 {
-                    if (beforeVch != null && voiceChannelLog.TryGetValue(beforeVch, out notifyChBefore))
+                    if (beforeVch != null && config.VoiceChannelLog.TryGetValue(beforeVch.Id, out notifyChBeforeId) && (notifyChBefore = e.Before.Server.TextChannels.FirstOrDefault(tc => tc.Id == notifyChBeforeId)) != null)
                     {
                         notifyLeave = true;
                     }
-                    if (afterVch != null && voiceChannelLog.TryGetValue(afterVch, out notifyChAfter))
+                    if (afterVch != null && config.VoiceChannelLog.TryGetValue(afterVch.Id, out notifyChAfterId) && (notifyChAfter = e.After.Server.TextChannels.FirstOrDefault(tc => tc.Id == notifyChAfterId)) != null)
                     {
                         notifyJoin = true;
                     }
@@ -253,8 +291,11 @@ $@"🕔`{prettyCurrentTime}` **Message** 📝 `#{e.Channel.Name}`
 
             try
             {
+                var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                if (chId == null)
+                    return;
                 Channel ch;
-                if (!logs.TryGetValue(e.Server, out ch))
+                if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
                     return;
                 string str = $"🕔`{prettyCurrentTime}`";
                 if (e.Before.Name != e.After.Name)
@@ -309,41 +350,55 @@ $@"🕔`{prettyCurrentTime}` **Message** 📝 `#{e.Channel.Name}`
                 });
 
             cgb.CreateCommand(Module.Prefix + "logserver")
-                  .Description("Toggles logging in this channel. Logs every message sent/deleted/edited on the server. **Owner Only!**")
-                  .AddCheck(SimpleCheckers.OwnerOnly())
-                  .AddCheck(SimpleCheckers.ManageServer())
-                  .Do(DoFunc());
-
-            cgb.CreateCommand(Module.Prefix + "userpresence")
-                  .Description("Starts logging to this channel when someone from the server goes online/offline/idle. **Owner Only!**")
+                  .Description("Toggles logging in this channel. Logs every message sent/deleted/edited on the server. **Bot Owner Only!**")
                   .AddCheck(SimpleCheckers.OwnerOnly())
                   .AddCheck(SimpleCheckers.ManageServer())
                   .Do(async e =>
                   {
-                      Channel ch;
-                      if (!loggingPresences.TryRemove(e.Server, out ch))
+                      var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel;
+                      if (chId == null)
                       {
-                          loggingPresences.TryAdd(e.Server, e.Channel);
+                          SpecificConfigurations.Default.Of(e.Server.Id).LogServerChannel = e.Channel.Id;
+                          await e.Channel.SendMessage($"❗**I WILL BEGIN LOGGING SERVER ACTIVITY IN THIS CHANNEL**❗").ConfigureAwait(false);
+                          return;
+                      }
+                      Channel ch;
+                      if ((ch = e.Server.TextChannels.Where(tc => tc.Id == chId).FirstOrDefault()) == null)
+                          return;
+                          
+                      SpecificConfigurations.Default.Of (e.Server.Id).LogServerChannel = null;
+                      await e.Channel.SendMessage($"❗**NO LONGER LOGGING IN {ch.Mention} CHANNEL**❗").ConfigureAwait(false);
+                  });
+
+            cgb.CreateCommand(Module.Prefix + "userpresence")
+                  .Description("Starts logging to this channel when someone from the server goes online/offline/idle.")
+                  .AddCheck(SimpleCheckers.ManageServer())
+                  .Do(async e =>
+                  {
+                      var chId = SpecificConfigurations.Default.Of(e.Server.Id).LogPresenceChannel;
+                      if (chId == null)
+                      {
+                          SpecificConfigurations.Default.Of(e.Server.Id).LogPresenceChannel = e.Channel.Id;
                           await e.Channel.SendMessage($"**User presence notifications enabled.**").ConfigureAwait(false);
                           return;
                       }
-
+                      SpecificConfigurations.Default.Of(e.Server.Id).LogPresenceChannel = null;
                       await e.Channel.SendMessage($"**User presence notifications disabled.**").ConfigureAwait(false);
                   });
 
             cgb.CreateCommand(Module.Prefix + "voicepresence")
-                  .Description("Toggles logging to this channel whenever someone joins or leaves a voice channel you are in right now. **Owner Only!**")
+                  .Description("Toggles logging to this channel whenever someone joins or leaves a voice channel you are in right now.")
                   .Parameter("all", ParameterType.Optional)
-                  .AddCheck(SimpleCheckers.OwnerOnly())
                   .AddCheck(SimpleCheckers.ManageServer())
                   .Do(async e =>
                   {
 
+                      var config = SpecificConfigurations.Default.Of(e.Server.Id);
                       if (e.GetArg("all")?.ToLower() == "all")
                       {
                           foreach (var voiceChannel in e.Server.VoiceChannels)
                           {
-                              voiceChannelLog.TryAdd(voiceChannel, e.Channel);
+                              config.VoiceChannelLog.TryAdd(voiceChannel.Id, e.Channel.Id);
                           }
                           await e.Channel.SendMessage("Started logging user presence for **ALL** voice channels!").ConfigureAwait(false);
                           return;
@@ -354,10 +409,10 @@ $@"🕔`{prettyCurrentTime}` **Message** 📝 `#{e.Channel.Name}`
                           await e.Channel.SendMessage("💢 You are not in a voice channel right now. If you are, please rejoin it.").ConfigureAwait(false);
                           return;
                       }
-                      Channel throwaway;
-                      if (!voiceChannelLog.TryRemove(e.User.VoiceChannel, out throwaway))
+                      ulong throwaway;
+                      if (!config.VoiceChannelLog.TryRemove(e.User.VoiceChannel.Id, out throwaway))
                       {
-                          voiceChannelLog.TryAdd(e.User.VoiceChannel, e.Channel);
+                          config.VoiceChannelLog.TryAdd(e.User.VoiceChannel.Id, e.Channel.Id);
                           await e.Channel.SendMessage($"`Logging user updates for` {e.User.VoiceChannel.Mention} `voice channel.`").ConfigureAwait(false);
                       }
                       else

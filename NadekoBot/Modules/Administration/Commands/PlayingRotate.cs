@@ -14,7 +14,7 @@ namespace NadekoBot.Modules.Administration.Commands
 {
     internal class PlayingRotate : DiscordCommand
     {
-        private static readonly Timer timer = new Timer(12000);
+        private static readonly Timer timer = new Timer(20000);
 
         public static Dictionary<string, Func<string>> PlayingPlaceholders { get; } =
             new Dictionary<string, Func<string>> {
@@ -41,7 +41,7 @@ namespace NadekoBot.Modules.Administration.Commands
         public PlayingRotate(DiscordModule module) : base(module)
         {
             var i = -1;
-            timer.Elapsed += (s, e) =>
+            timer.Elapsed += async (s, e) =>
             {
                 try
                 {
@@ -51,11 +51,9 @@ namespace NadekoBot.Modules.Administration.Commands
                     {
                         if (PlayingPlaceholders.Count == 0
                             || NadekoBot.Config.RotatingStatuses.Count == 0
-                            || i >= PlayingPlaceholders.Count
                             || i >= NadekoBot.Config.RotatingStatuses.Count)
                         {
-                            i = -1;
-                            return;
+                            i = 0;
                         }
                         status = NadekoBot.Config.RotatingStatuses[i];
                         status = PlayingPlaceholders.Aggregate(status,
@@ -63,7 +61,7 @@ namespace NadekoBot.Modules.Administration.Commands
                     }
                     if (string.IsNullOrWhiteSpace(status))
                         return;
-                    Task.Run(() => { NadekoBot.Client.SetGame(status); });
+                    await Task.Run(() => { NadekoBot.Client.SetGame(status); });
                 }
                 catch { }
             };

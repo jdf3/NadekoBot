@@ -1,15 +1,12 @@
-using Discord;
+﻿using Discord;
 using Discord.Commands;
 using Discord.Modules;
-using NadekoBot.Classes.Conversations.Commands;
 using NadekoBot.DataModels;
 using NadekoBot.Extensions;
+using NadekoBot.Modules.Conversations.Commands;
 using NadekoBot.Modules.Permissions.Classes;
-using NadekoBot.Properties;
 using System;
 using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -21,8 +18,7 @@ namespace NadekoBot.Modules.Conversations
         private const string firestr = "🔥 ด้้้้้็็็็็้้้้้็็็็็้้้้้้้้็็็็็้้้้้็็ด้้้้้็็็็็้้้้้็็็็็้้้้้้้้็็็็็้้้้้็็็็็้้้้้้้้็็็ด้้้้้็็็็็้้้้้็็็็็้้้้้้้้็็็็็้้้้้็็็็็้้้้ 🔥";
         public Conversations()
         {
-            commands.Add(new CopyCommand(this));
-            commands.Add(new RequestsCommand(this));
+            commands.Add(new RipCommand(this));
         }
 
         public override string Prefix { get; } = String.Format(NadekoBot.Config.CommandPrefixes.Conversations, NadekoBot.Creds.BotId);
@@ -184,100 +180,36 @@ namespace NadekoBot.Modules.Conversations
                         await e.Channel.SendMessage(str).ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("rip")
-                    .Description("Shows a grave image of someone with a start year\n**Usage**: @NadekoBot rip @Someone 2000")
-                    .Parameter("user", ParameterType.Required)
-                    .Parameter("year", ParameterType.Optional)
-                    .Do(async e =>
-                    {
-                        if (string.IsNullOrWhiteSpace(e.GetArg("user")))
-                            return;
-                        var usr = e.Channel.FindUsers(e.GetArg("user")).FirstOrDefault();
-                        var text = "";
-                        text = usr?.Name ?? e.GetArg("user");
-                        await e.Channel.SendFile("ripzor_m8.png",
-                                RipName(text, string.IsNullOrWhiteSpace(e.GetArg("year"))
-                                ? null
-                                : e.GetArg("year")))
-                                    .ConfigureAwait(false);
-                    });
-                if (!NadekoBot.Config.DontJoinServers)
-                {
-                    cgb.CreateCommand("j")
-                        .Description("Joins a server using a code.")
-                        .Parameter("id", ParameterType.Required)
-                        .Do(async e =>
-                        {
-                            var invite = await client.GetInvite(e.Args[0]).ConfigureAwait(false);
-                            if (invite != null)
-                            {
-                                try
-                                {
-                                    await invite.Accept().ConfigureAwait(false);
-                                }
-                                catch
-                                {
-                                    await e.Channel.SendMessage("Failed to accept invite.").ConfigureAwait(false);
-                                }
-                                await e.Channel.SendMessage("I got in!").ConfigureAwait(false);
-                                return;
-                            }
-                            await e.Channel.SendMessage("Invalid code.").ConfigureAwait(false);
-                        });
-                }
-
                 cgb.CreateCommand("slm")
-                                .Description("Shows the message where you were last mentioned in this channel (checks last 10k messages)")
-                                .Do(async e =>
-                                {
-
-                                    Message msg = null;
-                                    var msgs = (await e.Channel.DownloadMessages(100).ConfigureAwait(false))
-                                    .Where(m => m.MentionedUsers.Contains(e.User))
-                                    .OrderByDescending(m => m.Timestamp);
-                                    if (msgs.Any())
-                                        msg = msgs.First();
-                                    else
-                                    {
-                                        var attempt = 0;
-                                        Message lastMessage = null;
-                                        while (msg == null && attempt++ < 5)
-                                        {
-                                            var msgsarr = await e.Channel.DownloadMessages(100, lastMessage?.Id).ConfigureAwait(false);
-                                            msg = msgsarr
-                                        .Where(m => m.MentionedUsers.Contains(e.User))
-                                        .OrderByDescending(m => m.Timestamp)
-                                        .FirstOrDefault();
-                                            lastMessage = msgsarr.OrderBy(m => m.Timestamp).First();
-                                        }
-                                    }
-                                    if (msg != null)
-                                        await e.Channel.SendMessage($"Last message mentioning you was at {msg.Timestamp}\n**Message from {msg.User.Name}:** {msg.RawText}")
-                                           .ConfigureAwait(false);
-                                    else
-                                        await e.Channel.SendMessage("I can't find a message mentioning you.").ConfigureAwait(false);
-                                });
-
-                cgb.CreateCommand("hide")
-                    .Description("Hides Nadeko in plain sight!11!!")
+                    .Description("Shows the message where you were last mentioned in this channel (checks last 10k messages)")
                     .Do(async e =>
                     {
-                        using (var ms = Resources.hidden.ToStream(ImageFormat.Png))
-                        {
-                            await client.CurrentUser.Edit(NadekoBot.Creds.Password, avatar: ms).ConfigureAwait(false);
-                        }
-                        await e.Channel.SendMessage("*hides*").ConfigureAwait(false);
-                    });
 
-                cgb.CreateCommand("unhide")
-                    .Description("Unhides Nadeko in plain sight!1!!1")
-                    .Do(async e =>
-                    {
-                        using (var fs = new FileStream("data/avatar.png", FileMode.Open))
+                        Message msg = null;
+                        var msgs = (await e.Channel.DownloadMessages(100).ConfigureAwait(false))
+                        .Where(m => m.MentionedUsers.Contains(e.User))
+                        .OrderByDescending(m => m.Timestamp);
+                        if (msgs.Any())
+                            msg = msgs.First();
+                        else
                         {
-                            await client.CurrentUser.Edit(NadekoBot.Creds.Password, avatar: fs).ConfigureAwait(false);
+                            var attempt = 0;
+                            Message lastMessage = null;
+                            while (msg == null && attempt++ < 5)
+                            {
+                                var msgsarr = await e.Channel.DownloadMessages(100, lastMessage?.Id).ConfigureAwait(false);
+                                msg = msgsarr
+                            .Where(m => m.MentionedUsers.Contains(e.User))
+                            .OrderByDescending(m => m.Timestamp)
+                            .FirstOrDefault();
+                                lastMessage = msgsarr.OrderBy(m => m.Timestamp).First();
+                            }
                         }
-                        await e.Channel.SendMessage("*unhides*").ConfigureAwait(false);
+                        if (msg != null)
+                            await e.Channel.SendMessage($"Last message mentioning you was at {msg.Timestamp}\n**Message from {msg.User.Name}:** {msg.RawText}")
+                                .ConfigureAwait(false);
+                        else
+                            await e.Channel.SendMessage("I can't find a message mentioning you.").ConfigureAwait(false);
                     });
 
                 cgb.CreateCommand("dump")
@@ -321,46 +253,10 @@ namespace NadekoBot.Modules.Conversations
                         await e.Channel.SendMessage(construct).ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("av")
-                    .Alias("avatar")
-                    .Parameter("mention", ParameterType.Required)
-                    .Description("Shows a mentioned person's avatar.\n**Usage**: ~av @X")
-                    .Do(async e =>
-                    {
-                        var usr = e.Channel.FindUsers(e.GetArg("mention")).FirstOrDefault();
-                        if (usr == null)
-                        {
-                            await e.Channel.SendMessage("Invalid user specified.").ConfigureAwait(false);
-                            return;
-                        }
-                        await e.Channel.SendMessage(await usr.AvatarUrl.ShortenUrl()).ConfigureAwait(false);
-                    });
-
             });
         }
 
-        public Stream RipName(string name, string year = null)
-        {
-            var bm = Resources.rip;
 
-            var offset = name.Length * 5;
-
-            var fontSize = 20;
-
-            if (name.Length > 10)
-            {
-                fontSize -= (name.Length - 10) / 2;
-            }
-
-            //TODO use measure string
-            var g = Graphics.FromImage(bm);
-            g.DrawString(name, new Font("Comic Sans MS", fontSize, FontStyle.Bold), Brushes.Black, 100 - offset, 200);
-            g.DrawString((year ?? "?") + " - " + DateTime.Now.Year, new Font("Consolas", 12, FontStyle.Bold), Brushes.Black, 80, 235);
-            g.Flush();
-            g.Dispose();
-
-            return bm.ToStream(ImageFormat.Png);
-        }
 
         private static Func<CommandEventArgs, Task> SayYes()
             => async e => await e.Channel.SendMessage("Yes. :)").ConfigureAwait(false);

@@ -12,8 +12,8 @@ namespace NadekoBot.Modules.Translator
 
         internal override void Init(CommandGroupBuilder cgb)
         {
-            cgb.CreateCommand(Module.Prefix + "trans")
-                .Alias(Module.Prefix + "translate")
+            cgb.CreateCommand(Module.Prefix + "translate")
+                .Alias(Module.Prefix + "trans")
                 .Description($"Translates from>to text. From the given language to the destiation language.\n**Usage**: {Module.Prefix}trans en>fr Hello")
                 .Parameter("langs", ParameterType.Required)
                 .Parameter("text", ParameterType.Unparsed)
@@ -27,13 +27,17 @@ namespace NadekoBot.Modules.Translator
                 await e.Channel.SendIsTyping().ConfigureAwait(false);
                 string from = e.GetArg("langs").ToLowerInvariant().Split('>')[0];
                 string to = e.GetArg("langs").ToLowerInvariant().Split('>')[1];
+                var text = e.GetArg("text")?.Trim();
+                if (string.IsNullOrWhiteSpace(text))
+                    return;
 
-                string translation = t.Translate(e.GetArg("text"), from, to);
+                string translation = await t.Translate(text, from, to).ConfigureAwait(false);
                 await e.Channel.SendMessage(translation).ConfigureAwait(false);
             }
-            catch
+            catch (Exception ex)
             {
-                await e.Channel.SendMessage("Bad input format, or sth went wrong...").ConfigureAwait(false);
+                Console.WriteLine(ex);
+                await e.Channel.SendMessage("Bad input format, or something went wrong...").ConfigureAwait(false);
             }
 
         };

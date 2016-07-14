@@ -32,7 +32,7 @@ namespace NadekoBot.Modules.Searches.Commands.IMDB
             ImdbMovie mov = new ImdbMovie();
             string imdbUrl = GetIMDbUrl(System.Uri.EscapeUriString(MovieName));
             mov.Status = false;
-            if (!string.IsNullOrEmpty(imdbUrl))
+            if (!string.IsNullOrWhiteSpace(imdbUrl))
             {
                 ParseIMDbPage(imdbUrl, GetExtraInfo, mov);
             }
@@ -45,11 +45,7 @@ namespace NadekoBot.Modules.Searches.Commands.IMDB
             ImdbMovie mov = new ImdbMovie();
             string imdbUrl = "http://www.imdb.com/title/" + imdbId + "/";
             mov.Status = false;
-            if (!string.IsNullOrEmpty(imdbUrl))
-            {
-                ParseIMDbPage(imdbUrl, GetExtraInfo, mov);
-            }
-
+            ParseIMDbPage(imdbUrl, GetExtraInfo, mov);
             return mov;
         }
 

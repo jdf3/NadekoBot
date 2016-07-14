@@ -6,6 +6,7 @@ using NadekoBot.DataModels;
 using NadekoBot.Extensions;
 using NadekoBot.Modules.Music.Classes;
 using NadekoBot.Modules.Permissions.Classes;
+using Newtonsoft.Json.Linq;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -19,26 +20,9 @@ namespace NadekoBot.Modules.Music
     {
 
         public static ConcurrentDictionary<Server, MusicPlayer> MusicPlayers = new ConcurrentDictionary<Server, MusicPlayer>();
-        public static ConcurrentDictionary<ulong, float> DefaultMusicVolumes = new ConcurrentDictionary<ulong, float>();
 
         public MusicModule()
         {
-            // ready for 1.0
-            //NadekoBot.Client.UserUpdated += (s, e) =>
-            //{
-            //    try
-            //    {
-            //        if (e.Before.VoiceChannel != e.After.VoiceChannel &&
-            //           e.Before.VoiceChannel.Members.Count() == 0)
-            //        {
-            //            MusicPlayer musicPlayer;
-            //            if (!MusicPlayers.TryRemove(e.Server, out musicPlayer)) return;
-            //            musicPlayer.Destroy();
-            //        }
-            //    }
-            //    catch { }
-            //};
-
         }
 
         public override string Prefix { get; } = NadekoBot.Config.CommandPrefixes.Music;
@@ -54,8 +38,8 @@ namespace NadekoBot.Modules.Music
 
                 commands.ForEach(cmd => cmd.Init(cgb));
 
-                cgb.CreateCommand("n")
-                    .Alias("next")
+                cgb.CreateCommand("next")
+                    .Alias("n")
                     .Alias("skip")
                     .Description("Goes to the next song in the queue. You have to be in the same voice channel as the bot.\n**Usage**: `!m n`")
                     .Do(e =>
@@ -66,37 +50,34 @@ namespace NadekoBot.Modules.Music
                             musicPlayer.Next();
                     });
 
-                cgb.CreateCommand("s")
-                    .Alias("stop")
+                cgb.CreateCommand("stop")
+                    .Alias("s")
                     .Description("Stops the music and clears the playlist. Stays in the channel.\n**Usage**: `!m s`")
-                    .Do(async e =>
+                    .Do(e =>
                     {
-                        await Task.Run(() =>
+                        MusicPlayer musicPlayer;
+                        if (!MusicPlayers.TryGetValue(e.Server, out musicPlayer)) return;
+                        if (e.User.VoiceChannel == musicPlayer.PlaybackVoiceChannel)
                         {
-                            MusicPlayer musicPlayer;
-                            if (!MusicPlayers.TryGetValue(e.Server, out musicPlayer)) return;
-                            if (e.User.VoiceChannel == musicPlayer.PlaybackVoiceChannel)
-                                musicPlayer.Stop();
-                        }).ConfigureAwait(false);
+                            musicPlayer.Autoplay = false;
+                            musicPlayer.Stop();
+                        }
                     });
 
-                cgb.CreateCommand("d")
-                    .Alias("destroy")
+                cgb.CreateCommand("destroy")
+                    .Alias("d")
                     .Description("Completely stops the music and unbinds the bot from the channel. " +
                                  "(may cause weird behaviour)\n**Usage**: `!m d`")
-                    .Do(async e =>
+                    .Do(e =>
                     {
-                        await Task.Run(() =>
-                        {
-                            MusicPlayer musicPlayer;
-                            if (!MusicPlayers.TryRemove(e.Server, out musicPlayer)) return;
-                            if (e.User.VoiceChannel == musicPlayer.PlaybackVoiceChannel)
-                                musicPlayer.Destroy();
-                        }).ConfigureAwait(false);
+                        MusicPlayer musicPlayer;
+                        if (!MusicPlayers.TryRemove(e.Server, out musicPlayer)) return;
+                        if (e.User.VoiceChannel == musicPlayer.PlaybackVoiceChannel)
+                            musicPlayer.Destroy();
                     });
 
-                cgb.CreateCommand("p")
-                    .Alias("pause")
+                cgb.CreateCommand("pause")
+                    .Alias("p")
                     .Description("Pauses or Unpauses the song.\n**Usage**: `!m p`")
                     .Do(async e =>
                     {
@@ -111,7 +92,8 @@ namespace NadekoBot.Modules.Music
                             await e.Channel.SendMessage("🎵`Music Player unpaused.`").ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("q")
+                cgb.CreateCommand("queue")
+                    .Alias("q")
                     .Alias("yq")
                     .Description("Queue a song using keywords or a link. Bot will join your voice channel." +
                                  "**You must be in a voice channel**.\n**Usage**: `!m q Dream Of Venice`")
@@ -126,9 +108,25 @@ namespace NadekoBot.Modules.Music
                         }
                     });
 
-                cgb.CreateCommand("lq")
-                    .Alias("ls").Alias("lp")
-                    .Description("Lists up to 15 currently queued songs.\n**Usage**: `!m lq`")
+                //cgb.CreateCommand("soundcloudqueue")
+                //    .Alias("sq")
+                //    .Description("Queue a soundcloud song using keywords. Bot will join your voice channel." +
+                //                 "**You must be in a voice channel**.\n**Usage**: `!m sq Dream Of Venice`")
+                //    .Parameter("query", ParameterType.Unparsed)
+                //    .Do(async e =>
+                //    {
+                //        await QueueSong(e.Channel, e.User.VoiceChannel, e.GetArg("query")).ConfigureAwait(false);
+                //        if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                //        {
+                //            await Task.Delay(10000).ConfigureAwait(false);
+                //            await e.Message.Delete().ConfigureAwait(false);
+                //        }
+                //    });
+
+                cgb.CreateCommand("listqueue")
+                    .Alias("lq")
+                    .Description("Lists 15 currently queued songs per page. Default page is 1.\n**Usage**: `!m lq` or `!m lq 2`")
+                    .Parameter("page", ParameterType.Optional)
                     .Do(async e =>
                     {
                         MusicPlayer musicPlayer;
@@ -137,6 +135,13 @@ namespace NadekoBot.Modules.Music
                             await e.Channel.SendMessage("🎵 No active music player.").ConfigureAwait(false);
                             return;
                         }
+
+                        int page;
+                        if (!int.TryParse(e.GetArg("page"), out page) || page <= 0)
+                        {
+                            page = 1;
+                        }
+
                         var currentSong = musicPlayer.CurrentSong;
                         if (currentSong == null)
                             return;
@@ -145,17 +150,19 @@ namespace NadekoBot.Modules.Music
                             toSend += "🔂";
                         else if (musicPlayer.RepeatPlaylist)
                             toSend += "🔁";
-                        toSend += $" **{musicPlayer.Playlist.Count}** `tracks currently queued.` ";
+                        toSend += $" **{musicPlayer.Playlist.Count}** `tracks currently queued. Showing page {page}` ";
                         if (musicPlayer.Playlist.Count >= MusicPlayer.MaximumPlaylistSize)
                             toSend += "**Song queue is full!**\n";
                         else
                             toSend += "\n";
-                        var number = 1;
-                        await e.Channel.SendMessage(toSend + string.Join("\n", musicPlayer.Playlist.Take(15).Select(v => $"`{number++}.` {v.PrettyName}"))).ConfigureAwait(false);
+                        const int itemsPerPage = 15;
+                        int startAt = itemsPerPage * (page - 1);
+                        var number = 1 + startAt;
+                        await e.Channel.SendMessage(toSend + string.Join("\n", musicPlayer.Playlist.Skip(startAt).Take(15).Select(v => $"`{number++}.` {v.PrettyName}"))).ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("np")
-                    .Alias("playing")
+                cgb.CreateCommand("nowplaying")
+                    .Alias("np")
                     .Description("Shows the song currently playing.\n**Usage**: `!m np`")
                     .Do(async e =>
                     {
@@ -169,7 +176,8 @@ namespace NadekoBot.Modules.Music
                                                     $"{currentSong.PrettyCurrentTime()}").ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("vol")
+                cgb.CreateCommand("volume")
+                    .Alias("vol")
                     .Description("Sets the music volume 0-100%\n**Usage**: `!m vol 50`")
                     .Parameter("val", ParameterType.Required)
                     .Do(async e =>
@@ -190,10 +198,10 @@ namespace NadekoBot.Modules.Music
                         await e.Channel.SendMessage($"🎵 `Volume set to {volume}%`").ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("dv")
-                    .Alias("defvol")
+                cgb.CreateCommand("defvol")
+                    .Alias("dv")
                     .Description("Sets the default music volume when music playback is started (0-100)." +
-                                 " Does not persist through restarts.\n**Usage**: `!m dv 80`")
+                                 " Persists through restarts.\n**Usage**: `!m dv 80`")
                     .Parameter("val", ParameterType.Required)
                     .Do(async e =>
                     {
@@ -204,11 +212,12 @@ namespace NadekoBot.Modules.Music
                             await e.Channel.SendMessage("Volume number invalid.").ConfigureAwait(false);
                             return;
                         }
-                        DefaultMusicVolumes.AddOrUpdate(e.Server.Id, volume / 100, (key, newval) => volume / 100);
+                        var conf = SpecificConfigurations.Default.Of(e.Server.Id);
+                        conf.DefaultMusicVolume = volume / 100;
                         await e.Channel.SendMessage($"🎵 `Default volume set to {volume}%`").ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("min").Alias("mute")
+                cgb.CreateCommand("mute").Alias("min")
                     .Description("Sets the music volume to 0%\n**Usage**: `!m min`")
                     .Do(e =>
                     {
@@ -244,7 +253,8 @@ namespace NadekoBot.Modules.Music
                         musicPlayer.SetVolume(50);
                     });
 
-                cgb.CreateCommand("sh")
+                cgb.CreateCommand("shuffle")
+                    .Alias("sh")
                     .Description("Shuffles the current playlist.\n**Usage**: `!m sh`")
                     .Do(async e =>
                     {
@@ -263,7 +273,8 @@ namespace NadekoBot.Modules.Music
                         await e.Channel.SendMessage("🎵 `Songs shuffled.`").ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("pl")
+                cgb.CreateCommand("playlist")
+                    .Alias("pl")
                     .Description("Queues up to 50 songs from a youtube playlist specified by a link, or keywords.\n**Usage**: `!m pl playlist link or name`")
                     .Parameter("playlist", ParameterType.Unparsed)
                     .Do(async e =>
@@ -304,8 +315,40 @@ namespace NadekoBot.Modules.Music
                         await msg.Edit("🎵 `Playlist queue complete.`").ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("lopl")
-                    .Description("Queues all songs from a directory. **Owner Only!**\n**Usage**: `!m lopl C:/music/classical`")
+                cgb.CreateCommand("soundcloudpl")
+                    .Alias("scpl")
+                    .Description("Queue a soundcloud playlist using a link. | `!m scpl https://soundcloud.com/saratology/sets/symphony`")
+                    .Parameter("pl", ParameterType.Unparsed)
+                    .Do(async e =>
+                    {
+                        var pl = e.GetArg("pl")?.Trim();
+
+                        if (string.IsNullOrWhiteSpace(pl))
+                            return;
+
+                        var scvids = JObject.Parse(await SearchHelper.GetResponseStringAsync($"http://api.soundcloud.com/resolve?url={pl}&client_id={NadekoBot.Creds.SoundCloudClientID}"))["tracks"].ToObject<SoundCloudVideo[]>();
+                        await QueueSong(e.Channel, e.User.VoiceChannel, scvids[0].TrackLink);
+
+                        MusicPlayer mp;
+                        if (!MusicPlayers.TryGetValue(e.Server, out mp))
+                            return;
+
+                        foreach (var svideo in scvids.Skip(1))
+                        {
+                            mp.AddSong(new Song(new Classes.SongInfo
+                            {
+                                Title = svideo.FullName,
+                                Provider = "SoundCloud",
+                                Uri = svideo.StreamLink,
+                                ProviderType = MusicType.Normal,
+                                Query = svideo.TrackLink,
+                            }));
+                        }
+                    });
+
+                cgb.CreateCommand("localplaylst")
+                    .Alias("lopl")
+                    .Description("Queues all songs from a directory. **Bot Owner Only!**\n**Usage**: `!m lopl C:/music/classical`")
                     .Parameter("directory", ParameterType.Unparsed)
                     .AddCheck(SimpleCheckers.OwnerOnly())
                     .Do(async e =>
@@ -344,8 +387,9 @@ namespace NadekoBot.Modules.Music
                         }
                     });
 
-                cgb.CreateCommand("lo")
-                    .Description("Queues a local file by specifying a full path. **Owner Only!**\n**Usage**: `!m lo C:/music/mysong.mp3`")
+                cgb.CreateCommand("local")
+                    .Alias("lo")
+                    .Description("Queues a local file by specifying a full path. **Bot Owner Only!**\n**Usage**: `!m lo C:/music/mysong.mp3`")
                     .Parameter("path", ParameterType.Unparsed)
                     .AddCheck(SimpleCheckers.OwnerOnly())
                     .Do(async e =>
@@ -356,7 +400,8 @@ namespace NadekoBot.Modules.Music
                         await QueueSong(e.Channel, e.User.VoiceChannel, e.GetArg("path"), musicType: MusicType.Local).ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("mv")
+                cgb.CreateCommand("move")
+                    .Alias("mv")
                     .Description("Moves the bot to your voice channel. (works only if music is already playing)\n**Usage**: `!m mv`")
                     .Do(e =>
                     {
@@ -367,7 +412,8 @@ namespace NadekoBot.Modules.Music
                         musicPlayer.MoveToVoiceChannel(voiceChannel);
                     });
 
-                cgb.CreateCommand("rm")
+                cgb.CreateCommand("remove")
+                    .Alias("rm")
                     .Description("Remove a song by its # in the queue, or 'all' to remove whole queue.\n**Usage**: `!m rm 5`")
                     .Parameter("num", ParameterType.Required)
                     .Do(async e =>
@@ -398,8 +444,45 @@ namespace NadekoBot.Modules.Music
                         await e.Channel.SendMessage($"🎵**Track {song.PrettyName} at position `#{num}` has been removed.**").ConfigureAwait(false);
                     });
 
+                //var msRegex = new Regex(@"(?<n1>\d+)>(?<n2>\d+)", RegexOptions.Compiled);
+                cgb.CreateCommand("movesong")
+                    .Alias("ms")
+                    .Description($"Moves a song from one position to another.\n**Usage**: `{Prefix} ms` 5>3")
+                    .Parameter("fromto")
+                    .Do(async e =>
+                    {
+                        MusicPlayer musicPlayer;
+                        if (!MusicPlayers.TryGetValue(e.Server, out musicPlayer))
+                        {
+                            return;
+                        }
+                        var fromto = e.GetArg("fromto").Trim();
+                        var fromtoArr = fromto.Split('>');
+
+                        int n1;
+                        int n2;
+
+                        var playlist = musicPlayer.Playlist as List<Song> ?? musicPlayer.Playlist.ToList();
+
+                        if (fromtoArr.Length != 2 || !int.TryParse(fromtoArr[0], out n1) ||
+                            !int.TryParse(fromtoArr[1], out n2) || n1 < 1 || n2 < 1 || n1 == n2 ||
+                            n1 > playlist.Count || n2 > playlist.Count)
+                        {
+                            await e.Channel.SendMessage("`Invalid input.`");
+                            return;
+                        }
+
+                        var s = playlist[n1 - 1];
+                        playlist.Insert(n2 - 1, s);
+                        var nn1 = n2 < n1 ? n1 : n1 - 1;
+                        playlist.RemoveAt(nn1);
+
+                        await e.Channel.SendMessage($"🎵`Moved` {s.PrettyName} `from #{n1} to #{n2}`");
+
+                    });
+
                 cgb.CreateCommand("cleanup")
-                    .Description("Cleans up hanging voice connections. **Owner Only!**\n**Usage**: `!m cleanup`")
+                    .Description("Cleans up hanging voice connections. **Bot Owner Only!**\n**Usage**: `!m cleanup`")
                     .AddCheck(SimpleCheckers.OwnerOnly())
                     .Do(e =>
                     {
@@ -416,8 +499,8 @@ namespace NadekoBot.Modules.Music
                         }
                     });
 
-                cgb.CreateCommand("rcs")
-                    .Alias("repeatcurrentsong")
+                cgb.CreateCommand("reptcursong")
+                    .Alias("rcs")
                     .Description("Toggles repeat of current song.\n**Usage**: `!m rcs`")
                     .Do(async e =>
                     {
@@ -434,8 +517,8 @@ namespace NadekoBot.Modules.Music
                                                         .ConfigureAwait(false);
                     });
 
-                cgb.CreateCommand("rpl")
-                    .Alias("repeatplaylist")
+                cgb.CreateCommand("rpeatplaylst")
+                    .Alias("rpl")
                     .Description("Toggles repeat of all songs in the queue (every song that finishes is added to the end of the queue).\n**Usage**: `!m rpl`")
                     .Do(async e =>
                     {
@@ -571,6 +654,23 @@ namespace NadekoBot.Modules.Music
                             e.Channel.SendMessage($"```js\n--- List of saved playlists ---\n\n" + string.Join("\n", result.Select(r => $"'{r.Name}-{r.Id}' by {r.Creator} ({r.SongCnt} songs)")) + $"\n\n        --- Page {num} ---```");
                     });
 
+                cgb.CreateCommand("deleteplaylist")
+                    .Alias("delpls")
+                    .Description("Deletes a saved playlist. Only if you made it or if you are the bot owner. | `!m delpls animu-5`")
+                    .Parameter("pl", ParameterType.Required)
+                    .Do(async e =>
+                    {
+                        var pl = e.GetArg("pl").Trim().Split('-')[1];
+                        if (string.IsNullOrWhiteSpace(pl))
+                            return;
+                        var plnum = int.Parse(pl);
+                        if (NadekoBot.IsOwner(e.User.Id))
+                            DbHandler.Instance.Delete<MusicPlaylist>(plnum);
+                        else
+                            DbHandler.Instance.DeleteWhere<MusicPlaylist>(mp => mp.Id == plnum && (long)e.User.Id == mp.CreatorId);
+                        await e.Channel.SendMessage("`Ok.` :ok:");
+                    });
+
                 cgb.CreateCommand("goto")
                     .Description("Goes to a specific time in seconds in a song.")
                     .Parameter("time")
@@ -621,10 +721,26 @@ namespace NadekoBot.Modules.Music
                             return;
                         await e.Channel.SendMessage($"🎶`Current song:` <{curSong.SongInfo.Query}>");
                     });
+
+                cgb.CreateCommand("autoplay")
+                    .Alias("ap")
+                    .Description("Toggles autoplay - When the song is finished, automatically queue a related youtube song. (Works only for youtube songs and when queue is empty)")
+                    .Do(async e =>
+                    {
+
+                        MusicPlayer musicPlayer;
+                        if (!MusicPlayers.TryGetValue(e.Server, out musicPlayer))
+                            return;
+
+                        if (!musicPlayer.ToggleAutoplay())
+                            await e.Channel.SendMessage("🎶`Autoplay disabled.`");
+                        else
+                            await e.Channel.SendMessage("🎶`Autoplay enabled.`");
+                    });
             });
         }
 
-        private async Task QueueSong(Channel textCh, Channel voiceCh, string query, bool silent = false, MusicType musicType = MusicType.Normal)
+        public static async Task QueueSong(Channel textCh, Channel voiceCh, string query, bool silent = false, MusicType musicType = MusicType.Normal)
         {
             if (voiceCh == null || voiceCh.Server != textCh.Server)
             {
@@ -637,10 +753,7 @@ namespace NadekoBot.Modules.Music
 
             var musicPlayer = MusicPlayers.GetOrAdd(textCh.Server, server =>
             {
-                float? vol = null;
-                float throwAway;
-                if (DefaultMusicVolumes.TryGetValue(server.Id, out throwAway))
-                    vol = throwAway;
+                float vol = SpecificConfigurations.Default.Of(server.Id).DefaultMusicVolume;
                 var mp = new MusicPlayer(voiceCh, vol);
 
 
@@ -657,8 +770,15 @@ namespace NadekoBot.Modules.Music
                             if (playingMessage != null)
                                 await playingMessage.Delete().ConfigureAwait(false);
                             lastFinishedMessage = await textCh.SendMessage($"🎵`Finished`{song.PrettyName}").ConfigureAwait(false);
+                            if (mp.Autoplay && mp.Playlist.Count == 0 && song.SongInfo.Provider == "YouTube")
+                            {
+                                await QueueSong(textCh, voiceCh, await SearchHelper.GetRelatedVideoId(song.SongInfo.Query), silent, musicType).ConfigureAwait(false);
+                            }
                         }
-                        catch { }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine(e);
+                        }
                     }
                 };
                 mp.OnStarted += async (s, song) =>
@@ -681,22 +801,20 @@ namespace NadekoBot.Modules.Music
                 return mp;
             });
             var resolvedSong = await Song.ResolveSong(query, musicType).ConfigureAwait(false);
-            resolvedSong.MusicPlayer = musicPlayer;
-
             musicPlayer.AddSong(resolvedSong);
             if (!silent)
             {
                 var queuedMessage = await textCh.SendMessage($"🎵`Queued`{resolvedSong.PrettyName} **at** `#{musicPlayer.Playlist.Count}`").ConfigureAwait(false);
 #pragma warning disable CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
                 Task.Run(async () =>
-                {
-                    await Task.Delay(10000).ConfigureAwait(false);
-                    try
-                    {
-                        await queuedMessage.Delete().ConfigureAwait(false);
-                    }
-                    catch { }
-                }).ConfigureAwait(false);
+                                {
+                                    await Task.Delay(10000).ConfigureAwait(false);
+                                    try
+                                    {
+                                        await queuedMessage.Delete().ConfigureAwait(false);
+                                    }
+                                    catch { }
+                                }).ConfigureAwait(false);
 #pragma warning restore CS4014 // Because this call is not awaited, execution of the current method continues before the call is completed
             }
         }
