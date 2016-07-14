@@ -75,7 +75,7 @@ namespace NadekoBot.Modules.Music.Classes
                 {
                     p = Process.Start(new ProcessStartInfo
                     {
-                        FileName = "ffmpeg",
+                        FileName = @"C:\ffmpeg\bin\ffmpeg.exe",
                         Arguments = $"-ss {skipTo} -i {SongInfo.Uri} -f s16le -ar 48000 -ac 2 pipe:1 -loglevel quiet",
                         UseShellExecute = false,
                         RedirectStandardOutput = true,
