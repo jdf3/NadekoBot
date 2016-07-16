@@ -30,6 +30,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using NadekoBot.Modules.SSP;
 
 namespace NadekoBot
 {
@@ -172,6 +173,7 @@ namespace NadekoBot
 #if !NADEKO_RELEASE
             modules.Add(new MusicModule(), "Music", ModuleFilter.None);
 #endif
+            modules.Add(new SSPModule(), "SSP", ModuleFilter.None);
             modules.Add(new SearchesModule(), "Searches", ModuleFilter.None);
             modules.Add(new NSFWModule(), "NSFW", ModuleFilter.None);
             modules.Add(new ClashOfClansModule(), "ClashOfClans", ModuleFilter.None);

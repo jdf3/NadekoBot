@@ -162,6 +162,7 @@ Nadeko Support Server: <https://discord.gg/0ehQwTK2RBjAxzEY>";
         public string Programming { get; set; } = "%";
         public string Pokemon { get; set; } = ">";
         public string Utility { get; set; } = ".";
+        public string SSP { get; set; } = "!ssp";
     }
 
     public static class ConfigHandler
