@@ -48,8 +48,8 @@ namespace NadekoBot.Modules.SSP
             }
             else
             {
-                //ctsForChannel.Cancel();
                 AutoRefreshMap.TryRemove(channelId, out ctsForChannel);
+                ctsForChannel.Cancel();
             }
 
             return true;
