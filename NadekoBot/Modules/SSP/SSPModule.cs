@@ -5,11 +5,13 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Timers;
 using Discord;
 using Discord.Commands;
 using Discord.Modules;
 using NadekoBot.Extensions;
 using NadekoBot.Modules.Permissions.Classes;
+using Timer = System.Timers.Timer;
 
 namespace NadekoBot.Modules.SSP
 {
@@ -24,6 +26,47 @@ namespace NadekoBot.Modules.SSP
 
         public override string Prefix { get; } = NadekoBot.Config.CommandPrefixes.SSP;
 
+        private bool AreTrainingWheelsOn { get; set; }
+
+        private readonly ConcurrentDictionary<ulong, CancellationTokenSource> AutoRefreshMap = new ConcurrentDictionary<ulong, CancellationTokenSource>();
+
+        private bool ToggleAutoRefresh(Channel channel, bool turnOn)
+        {
+            if (channel == null) return false;
+
+            ulong channelId = channel.Id;
+            CancellationTokenSource ctsForChannel;
+            bool isOnForChannel = AutoRefreshMap.TryGetValue(channelId, out ctsForChannel);
+
+            if (isOnForChannel == turnOn) return true;
+
+            if (turnOn)
+            {
+                var cts = new CancellationTokenSource();
+                AutoRefreshMap[channelId] = cts;
+                AutoRefreshLoopAsync(channel, cts.Token);
+            }
+            else
+            {
+                //ctsForChannel.Cancel();
+                AutoRefreshMap.TryRemove(channelId, out ctsForChannel);
+            }
+
+            return true;
+        }
+
+        private async Task AutoRefreshLoopAsync(Channel channel, CancellationToken token)
+        {
+            while (!token.IsCancellationRequested)
+            {
+                Message newMessage = await channel.SendMessage(_ssp.PrintSummary());
+
+                await Task.Delay(120000, token).ConfigureAwait(false);
+
+                await newMessage.Delete();
+            }
+        }
+
         public override void Install(ModuleManager manager)
         {
             manager.CreateCommands(Prefix, cgb =>
@@ -31,6 +74,77 @@ namespace NadekoBot.Modules.SSP
                 cgb.AddCheck(PermissionChecker.Instance);
 
                 commands.ForEach(com => com.Init(cgb));
+
+                cgb.CreateCommand("trainingwheels")
+                   .Alias("tw")
+                   .Description($"Disables auto-cleanup of messages for commands in the `{Prefix}` module.\n**Usage:** `{Prefix} trainingwheels <on/off>")
+                   .Parameter("on")
+                   .Do(async e =>
+                   {
+                       string onArg = e.GetArg("on");
+
+                       if (string.Equals(onArg, "on", StringComparison.InvariantCultureIgnoreCase))
+                       {
+                           AreTrainingWheelsOn = true;
+                           await e.Channel.SendMessage($"Successfully turned training wheels on.");
+                       }
+                       else if (string.Equals(onArg, "off", StringComparison.InvariantCultureIgnoreCase))
+                       {
+                           AreTrainingWheelsOn = false;
+                           await e.Channel.SendMessage($"Successfully turned training wheels off.");
+                       }
+                       else
+                       {
+                           await e.Channel.SendMessage($"💢 I don't know what {onArg} is. Expecting either `on` or `off`.");
+                       }
+                   });
+
+                cgb.CreateCommand("autorefresh")
+                   .Alias("arf")
+                   .Description($"Shows the list of Soulstone Plains channels every 2 minutes. Cleans up old messages regardless of whether training wheels are on or off.\n**Usage** `{Prefix} trainingwheels <on/off>`")
+                   .Parameter("on")
+                   .Do(async e =>
+                   {
+                       string onArg = e.GetArg("on");
+
+                       bool turnOn;
+                       if (string.Equals(onArg, "on", StringComparison.InvariantCultureIgnoreCase))
+                       {
+                           turnOn = true;
+                       }
+                       else if (string.Equals(onArg, "off", StringComparison.InvariantCultureIgnoreCase))
+                       {
+                           turnOn = false;
+                       }
+                       else
+                       {
+                           await e.Channel.SendMessage($"💢 I don't know what {onArg} is. Expecting either `on` or `off`.");
+                           return;
+                       }
+
+                       if (!ToggleAutoRefresh(e.Channel, turnOn))
+                       {
+                           await e.Channel.SendMessage($"💢 I don't know why, but I couldn't toggle autorefresh for you...");
+                           return;
+                       };
+
+                       Message botMessage;
+
+                       botMessage = turnOn
+                           ? await e.Channel.SendMessage($"Successfully turned autorefresh on.")
+                           : await e.Channel.SendMessage($"Successfully turned autorefresh off.");
+
+                       if (!AreTrainingWheelsOn)
+                       {
+                           await Task.Delay(10000).ConfigureAwait(false);
+                           await botMessage.Delete().ConfigureAwait(false);
+                           if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                           {
+                               await e.Message.Delete().ConfigureAwait(false);
+                           }
+                       }
+                   });
+
 
                 cgb.CreateCommand("maxchannels")
                     .Alias("mc")
@@ -51,11 +165,14 @@ namespace NadekoBot.Modules.SSP
                             return;
                         }
                         Message botMessage = await e.Channel.SendMessage($"Set channel max to {channelMax}.");
-                        await Task.Delay(10000).ConfigureAwait(false);
-                        await botMessage.Delete().ConfigureAwait(false);
-                        if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                        if (!AreTrainingWheelsOn)
                         {
-                            await e.Message.Delete().ConfigureAwait(false);
+                            await Task.Delay(10000).ConfigureAwait(false);
+                            await botMessage.Delete().ConfigureAwait(false);
+                            if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                            {
+                                await e.Message.Delete().ConfigureAwait(false);
+                            }
                         }
                     });
 
@@ -79,12 +196,17 @@ namespace NadekoBot.Modules.SSP
                            await e.Channel.SendMessage($"💢 {timeArg} isn't a valid amount of time for the Capture phase.");
                            return;
                        }
+
                        Message botMessage = await e.Channel.SendMessage($"Default capture time set to {SSP.UnknownCaptureLength.ToString(@"mm\:ss")}.");
-                       await Task.Delay(10000).ConfigureAwait(false);
-                       await botMessage.Delete().ConfigureAwait(false);
-                       if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+
+                       if (!AreTrainingWheelsOn)
                        {
-                           await e.Message.Delete().ConfigureAwait(false);
+                           await Task.Delay(10000).ConfigureAwait(false);
+                           await botMessage.Delete().ConfigureAwait(false);
+                           if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                           {
+                               await e.Message.Delete().ConfigureAwait(false);
+                           }
                        }
                    });
 
@@ -139,11 +261,15 @@ namespace NadekoBot.Modules.SSP
                         string factionName = faction == Faction.Cerulean ? "Cerulean" : "Crimson";
 
                         Message botMessage = await e.Channel.SendMessage($"Successfully set owner of channel {channelNumber} to {faction}.");
-                        await Task.Delay(10000).ConfigureAwait(false);
-                        await botMessage.Delete().ConfigureAwait(false);
-                        if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+
+                        if (!AreTrainingWheelsOn)
                         {
-                            await e.Message.Delete().ConfigureAwait(false);
+                            await Task.Delay(10000).ConfigureAwait(false);
+                            await botMessage.Delete().ConfigureAwait(false);
+                            if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                            {
+                                await e.Message.Delete().ConfigureAwait(false);
+                            }
                         }
                     });
 
@@ -181,7 +307,18 @@ namespace NadekoBot.Modules.SSP
                     .Description("Lists the status of all known channels")
                     .Do(async e =>
                     {
-                        await e.Channel.SendMessage(_ssp.PrintSummary());
+                        Message botMessage = await e.Channel.SendMessage(_ssp.PrintSummary());
+
+                        if (!AreTrainingWheelsOn)
+                        {
+                            await Task.Delay(10000).ConfigureAwait(false);
+                            if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                            {
+                                await e.Message.Delete().ConfigureAwait(false);
+                            }
+                            await Task.Delay(120000).ConfigureAwait(false);
+                            await botMessage.Delete().ConfigureAwait(false);
+                        }
                     });
 
                 cgb.CreateCommand("setstatus")
@@ -267,11 +404,14 @@ namespace NadekoBot.Modules.SSP
                             return;
                         }
                         Message botMessage = await e.Channel.SendMessage($"Successfully saved channel `{channelNumber}`'s information:\n" + _ssp.PrintChannelSummary(channelNumber));
-                        await Task.Delay(10000).ConfigureAwait(false);
-                        await botMessage.Delete().ConfigureAwait(false);
-                        if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                        if (!AreTrainingWheelsOn)
                         {
-                            await e.Message.Delete().ConfigureAwait(false);
+                            await Task.Delay(10000).ConfigureAwait(false);
+                            await botMessage.Delete().ConfigureAwait(false);
+                            if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                            {
+                                await e.Message.Delete().ConfigureAwait(false);
+                            }
                         }
                     });
 
@@ -299,11 +439,15 @@ namespace NadekoBot.Modules.SSP
                            return;
                        }
                        Message botMessage = await e.Channel.SendMessage($"Successfully deleted all information about channel `{channelNumber}`.");
-                       await Task.Delay(10000).ConfigureAwait(false);
-                       await botMessage.Delete().ConfigureAwait(false);
-                       if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+
+                       if (!AreTrainingWheelsOn)
                        {
-                           await e.Message.Delete().ConfigureAwait(false);
+                           await Task.Delay(10000).ConfigureAwait(false);
+                           await botMessage.Delete().ConfigureAwait(false);
+                           if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                           {
+                               await e.Message.Delete().ConfigureAwait(false);
+                           }
                        }
                    });
 
@@ -343,15 +487,23 @@ namespace NadekoBot.Modules.SSP
                         {
                             entity = SSPEntity.SouthMiner;
                         }
-                        else if (entityArg.StartsWith("nor", StringComparison.CurrentCultureIgnoreCase) &&
-                                 entityArg.EndsWith("drill", StringComparison.CurrentCultureIgnoreCase))
+                        else if (entityArg.StartsWith("nor", StringComparison.InvariantCultureIgnoreCase) &&
+                                 entityArg.EndsWith("drill", StringComparison.InvariantCultureIgnoreCase))
                         {
                             entity = SSPEntity.NorthDrill;
                         }
-                        else if (entityArg.StartsWith("sou", StringComparison.CurrentCultureIgnoreCase) &&
+                        else if (entityArg.StartsWith("sou", StringComparison.InvariantCultureIgnoreCase) &&
                                  entityArg.EndsWith("drill", StringComparison.InvariantCultureIgnoreCase))
                         {
                             entity = SSPEntity.SouthDrill;
+                        }
+                        else if (entityArg.StartsWith("nor", StringComparison.CurrentCultureIgnoreCase))
+                        {
+                            entity = SSPEntity.NorthMiner;
+                        }
+                        else if (entityArg.StartsWith("sou", StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            entity = SSPEntity.SouthMiner;
                         }
                         else
                         {
@@ -382,11 +534,15 @@ namespace NadekoBot.Modules.SSP
                             return;
                         }
                         Message botMessage = await e.Channel.SendMessage($"Successfully marked {entity} as {readableStatus} on channel {channelNumber}.");
-                        await Task.Delay(10000).ConfigureAwait(false);
-                        await botMessage.Delete().ConfigureAwait(false);
-                        if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+
+                        if (!AreTrainingWheelsOn)
                         {
-                            await e.Message.Delete().ConfigureAwait(false);
+                            await Task.Delay(10000).ConfigureAwait(false);
+                            await botMessage.Delete().ConfigureAwait(false);
+                            if (e.Server.CurrentUser.GetPermissions(e.Channel).ManageMessages)
+                            {
+                                await e.Message.Delete().ConfigureAwait(false);
+                            }
                         }
                     });
             });
